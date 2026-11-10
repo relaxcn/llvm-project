@@ -791,6 +791,82 @@ TEST_P(ImportDecl, ImportFunctionTemplateDecl) {
              Lang_CXX03, Verifier, functionTemplateDecl());
 }
 
+TEST_P(ASTImporterOptionSpecificTestBase, COverloadableIsNotTheSameFunction) {
+  // An overloadable definition is a different function from an unmarked
+  // declaration with the same signature already in the destination, so the
+  // import creates a second declaration and the call keeps referring to it.
+  Decl *ToTU = getToTuDecl("int choose(const int *p) { return 1; }", Lang_C99);
+  Decl *FromTU =
+      getTuDecl("__attribute__((overloadable)) int "
+                "choose(const int *p) { return 2; }"
+                "int declToImport(const int *p) { return choose(p); }",
+                Lang_C99);
+  auto *ToChoose = FirstDeclMatcher<FunctionDecl>().match(
+      ToTU, functionDecl(hasName("choose")));
+  auto *From = FirstDeclMatcher<FunctionDecl>().match(
+      FromTU, functionDecl(hasName("declToImport")));
+  auto *To = Import(From, Lang_C99);
+  ASSERT_TRUE(To);
+
+  EXPECT_EQ(2u, DeclCounter<FunctionDecl>().match(
+                    ToTU, functionDecl(hasName("choose"))));
+  auto *Call = FirstDeclMatcher<CallExpr>().match(To, callExpr());
+  ASSERT_TRUE(Call);
+  ASSERT_TRUE(Call->getDirectCallee());
+  EXPECT_NE(ToChoose, Call->getDirectCallee());
+}
+
+TEST_P(ASTImporterOptionSpecificTestBase, CUnmarkedIsNotTheSameFunction) {
+  // The same holds when the destination has the overloadable function and the
+  // imported one is unmarked.
+  Decl *ToTU = getToTuDecl("__attribute__((overloadable)) int "
+                           "choose(const int *p) { return 1; }",
+                           Lang_C99);
+  Decl *FromTU =
+      getTuDecl("int choose(const int *p) { return 2; }"
+                "int declToImport(const int *p) { return choose(p); }",
+                Lang_C99);
+  auto *ToChoose = FirstDeclMatcher<FunctionDecl>().match(
+      ToTU, functionDecl(hasName("choose")));
+  auto *From = FirstDeclMatcher<FunctionDecl>().match(
+      FromTU, functionDecl(hasName("declToImport")));
+  auto *To = Import(From, Lang_C99);
+  ASSERT_TRUE(To);
+
+  EXPECT_EQ(2u, DeclCounter<FunctionDecl>().match(
+                    ToTU, functionDecl(hasName("choose"))));
+  auto *Call = FirstDeclMatcher<CallExpr>().match(To, callExpr());
+  ASSERT_TRUE(Call);
+  ASSERT_TRUE(Call->getDirectCallee());
+  EXPECT_NE(ToChoose, Call->getDirectCallee());
+  EXPECT_FALSE(Call->getDirectCallee()->hasAttr<OverloadableAttr>());
+}
+
+TEST_P(ASTImporterOptionSpecificTestBase, CXXOverloadableIsTheSameFunction) {
+  // In C++ the attribute is redundant, so the existing definition is reused
+  // instead of creating another function with the same signature.
+  Decl *ToTU =
+      getToTuDecl("int choose(const int *p) { return 1; }", Lang_CXX11);
+  Decl *FromTU =
+      getTuDecl("__attribute__((overloadable)) int "
+                "choose(const int *p) { return 2; }"
+                "int declToImport(const int *p) { return choose(p); }",
+                Lang_CXX11);
+  auto *ToChoose = FirstDeclMatcher<FunctionDecl>().match(
+      ToTU, functionDecl(hasName("choose")));
+  auto *From = FirstDeclMatcher<FunctionDecl>().match(
+      FromTU, functionDecl(hasName("declToImport")));
+  auto *To = Import(From, Lang_CXX11);
+  ASSERT_TRUE(To);
+
+  EXPECT_EQ(1u, DeclCounter<FunctionDecl>().match(
+                    ToTU, functionDecl(hasName("choose"))));
+  auto *Call = FirstDeclMatcher<CallExpr>().match(To, callExpr());
+  ASSERT_TRUE(Call);
+  ASSERT_TRUE(Call->getDirectCallee());
+  EXPECT_EQ(ToChoose, Call->getDirectCallee());
+}
+
 TEST_P(ImportExpr, ImportCXXDependentScopeMemberExpr) {
   MatchVerifier<Decl> Verifier;
   testImport("template <typename T> struct C { T t; };"

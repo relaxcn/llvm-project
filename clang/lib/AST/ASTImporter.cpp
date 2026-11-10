@@ -3868,8 +3868,12 @@ ExpectedDecl ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
         // FIXME: Check for overloading more carefully, e.g., by boosting
         // Sema::IsOverload out to the AST library.
 
-        // Function overloading is okay in C++.
-        if (Importer.getToContext().getLangOpts().CPlusPlus)
+        // Function overloading is okay in C++. In C, overloadable keeps a
+        // function distinct from an unmarked declaration with the same
+        // parameter types, so the pair is not an inconsistent redeclaration.
+        if (Importer.getToContext().getLangOpts().CPlusPlus ||
+            D->hasAttr<OverloadableAttr>() ||
+            FoundFunction->hasAttr<OverloadableAttr>())
           continue;
 
         // Complain about inconsistent function types.

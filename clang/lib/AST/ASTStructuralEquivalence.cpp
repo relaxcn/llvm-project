@@ -2531,7 +2531,18 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
   }
 
-  // FIXME: Consider checking for function attributes as well.
+  // In C, overloadable makes a function distinct even when its parameter types
+  // match another declaration's. Merging a fortified pass_object_size wrapper
+  // with the plain declaration would pick the wrong body. The attribute is
+  // redundant in C++, so it does not affect identity there.
+  const bool COverload1 = !Context.FromCtx.getLangOpts().CPlusPlus &&
+                          D1->hasAttr<OverloadableAttr>();
+  const bool COverload2 =
+      !Context.ToCtx.getLangOpts().CPlusPlus && D2->hasAttr<OverloadableAttr>();
+  if (COverload1 != COverload2)
+    return false;
+
+  // FIXME: Consider checking for other function attributes as well.
   if (!IsStructurallyEquivalent(Context, D1->getType(), D2->getType()))
     return false;
 
